@@ -67,7 +67,7 @@ e.g. via something like:
 echo 'parameter value' | sed -e 's/ /%20/g' -e 's/\//%2F/g'
 ```
 
-exit_code:
+* exit_code:<br/>
 When the actual backend succeeded monitor exits with exit code 0 but
 'inherit' lets monitor exit with the exit code of the actual backend
 if the actual backend had failed or was terminated after the maximum
@@ -75,7 +75,7 @@ number of times (attempts) to run the monitoring check command.
 Otherwise monitor exits with the specified exit code either a number
 or specified as CUPS_BACKEND_... variable name, see `man 7 backend`.
 
-attempts:
+* attempts:<br/>
 Maximum number of times the monitoring check command is run
 as long as the actual backend is running (0 is unlimited times)
 until the actual backend gets terminated if it did not finish before.
@@ -85,7 +85,7 @@ one second after the backend had finished or was terminated.
 Otherwise the first call of the monitoring check command happens
 directly after the actual backend was started.
 
-delay:
+* delay:<br/>
 Number of seconds between two calls of the monitoring check command.
 When attempts is 1 delay specifies the number of seconds until
 the actual backend gets terminated if it did not finish before.
@@ -94,14 +94,14 @@ that should finish within a tenth of a second (or it gets terminated)
 as often as possible and even both delay and attempts set to 0 works
 for special cases but the latter results unlimited busy looping.
 
-check:
+* check:<br/>
 What is called to monitor the actual backend while it is running.
 Either 'sleep' waits the number of seconds specified by delay
 or a whole percent encoded command (or script) can be specified.
 The monitoring check command should finish within delay seconds
 otherwise it gets terminated (first via SIGTERM, later via SIGKILL).
 
-actual_backend_URI:
+* actual_backend_URI:<br/>
 The whole verbatim device URI of the actual backend
 e.g. as shown by `lpstat -v` or `lpinfo -v`.
 
