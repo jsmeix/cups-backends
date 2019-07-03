@@ -12,7 +12,7 @@ It gets called by the cupsd as:
 pipe job-id user title copies options [file]
 ```
 
-Queue setup example:
+Queue setup synopsis:
 ```
 lpadmin -p queue_name -v "pipe:/path/to/command?option1=value1&-option2&value2" -E
 ```
@@ -52,7 +52,7 @@ It gets called by the cupsd as:
 monitor job-id user title copies options [file]
 ```
 
-Queue setup example:
+Queue setup synopsis:
 ```
 lpadmin -p queue_name -v 'monitor:/exit_code/attempts/delay/check/actual_backend_URI' -E
 ```
