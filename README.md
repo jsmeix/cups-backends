@@ -27,7 +27,7 @@ are provided as environment variables PIPE_BACKEND_ARGV[0-6]
 
 ## /usr/lib/cups/backend/monitor
 
-Generic CUPS wrapper backend /usr/lib/cups/backend/monitor
+Generic CUPS wrapper backend "monitor"
 that runs in parallel with the actual backend to monitor it.
 
 It will continue to actively run in parallel as parent process
