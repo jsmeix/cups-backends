@@ -31,16 +31,16 @@ Generic CUPS wrapper backend "monitor"
 that runs in parallel with the actual backend to monitor it.
 
 It will continue to actively run in parallel as parent process
-of the actual backend (that could be e.g. /usr/lib/cups/backend/ipp)
-so that the 'monitor' backend can do whatever is needed to watch
+of the actual backend (that could be e.g. /usr/lib/cups/backend/socket)
+so that the monitor backend can do whatever is needed to watch
 and control the actual backend including whatever is needed when
 the actual backend finished successfully or failed with an error.
 
-The main difference compared to the 'beh' backend is that the
-'monitor' backend is not idle waiting until the actual backend finished.
-The 'monitor' backend keeps actively running in parallel so that it can do
+The main difference compared to the 'beh' backend error handler is that
+the monitor backend is not idle waiting until the actual backend finished.
+The monitor backend keeps actively running in parallel so that it can do
 whatever is needed to monitor and control the actual backend while it is running
-(e.g. the 'monitor' backend terminates the actual backend when it is running for too long).
+(e.g. the monitor backend terminates the actual backend when it is running for too long).
 
 The intent is that experienced users and system admins can and should adapt or extend
 this generic CUPS backend monitor to make it work for their particular needs and use cases.
@@ -73,7 +73,7 @@ When the actual backend succeeded monitor exits with exit code 0 but
 if the actual backend had failed or was terminated after the maximum
 number of times (attempts) to run the monitoring check command.
 Otherwise monitor exits with the specified exit code either a number
-or specified as CUPS_BACKEND_* variable name, see 'man 7 backend'.
+or specified as CUPS_BACKEND_... variable name, see `man 7 backend`.
 
 attempts:
 Maximum number of times the monitoring check command is run
@@ -107,7 +107,7 @@ e.g. as shown by `lpstat -v` or `lpinfo -v`.
 
 Usage example:
 
-Run 'tcpdump' in parallel with the CUPS 'socket' backend to monitor
+Run 'tcpdump' in parallel with the CUPS socket backend to monitor
 what happens on the network while the socket backend is running.
 
 Assume the actual backend URI of the current print queue is
