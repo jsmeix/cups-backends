@@ -1,0 +1,419 @@
+#! /bin/bash
+
+# Generic CUPS wrapper backend /usr/lib/cups/backend/monitor
+# that runs in parallel with the actual backend to monitor it.
+#
+# It will continue to actively run in parallel as parent process
+# of the actual backend (that could be e.g. /usr/lib/cups/backend/ipp)
+# so that the 'monitor' backend can do whatever is needed to watch
+# and control the actual backend including whatever is needed when
+# the actual backend finished successfully or failed with an error.
+#
+# The main difference compared to the 'beh' backend is that the
+# 'monitor' backend is not idle waiting until the actual backend finished.
+# The 'monitor' backend keeps actively running in parallel so that it can do
+# whatever is needed to monitor and control the actual backend while it is running
+# (e.g. the 'monitor' backend terminates the actual backend when it is running for too long).
+#
+# The intent is that experienced users and system admins can and should adapt or extend
+# this generic CUPS backend monitor to make it work for their particular needs and use cases.
+# Therefore it is implemented in the native language for system administration: As bash script.
+#
+# Author: Johannes Meixner <jsmeix@suse.de>, 2019
+#
+# For basic information behind see "man 7 backend" and "man 7 filter".
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU GENERAL PUBLIC LICENSE Version 2
+# as published by the Free Software Foundation.
+
+# Activate the "set -x" line to get debugging info in /var/log/cups/error_log:
+#set -x
+
+# Output "Device Discovery" information on stdout:
+if test "$#" = "0"
+then echo 'direct monitor "Unknown" "Wrapper backend to monitor the actual backend while it is running"'
+     exit 0
+fi
+
+# Output usage information in case of wrong number of parameters:
+if test "$#" != "5" -a "$#" != "6"
+then { echo "Generic CUPS wrapper backend bash script /usr/lib/cups/backend/monitor"
+       echo "that runs in parallel with the actual backend to monitor it."
+       echo "Experienced users and system admins can and should adapt or extend this generic"
+       echo "CUPS backend monitor to make it work for their particular needs and use cases."
+       echo "It gets called by the cupsd as: monitor job-id user title copies options [file]"
+       echo "Queue setup synopsis:"
+       echo "lpadmin -p queue_name -v 'monitor:/exit_code/attempts/delay/check/actual_backend_URI' -E"
+       echo "All parameters (exit_code, attempts, delay, check, actual_backend_URI) must be specified"
+       echo "and separated by single slash (double slashes are possible inside actual_backend_URI)."
+       echo "Parameter values must be percent encoded, in particular space as %20 and slash as %2F"
+       echo "(e.g. via something like: echo 'parameter value' | sed -e 's/ /%20/g' -e 's/\//%2F/g')."
+       echo "exit_code: When the actual backend succeeded monitor exits with exit code 0 but"
+       echo "           'inherit' lets monitor exit with the exit code of the actual backend"
+       echo "           if the actual backend had failed or was terminated after the maximum"
+       echo "           number of times (attempts) to run the monitoring check command."
+       echo "           Otherwise monitor exits with the specified exit code either a number"
+       echo "           or specified as CUPS_BACKEND_* variable name, see 'man 7 backend'."
+       echo "attempts: Maximum number of times the monitoring check command is run"
+       echo "          as long as the actual backend is running (0 is unlimited times)"
+       echo "          until the actual backend gets terminated if it did not finish before."
+       echo "          When attempts is 1 the monitoring check command is called"
+       echo "          one second before the actual backend is started and terminated"
+       echo "          one second after the backend had finished or was terminated."
+       echo "          Otherwise the first call of the monitoring check command happens"
+       echo "          directly after the actual backend was started."
+       echo "delay: Number of seconds between two calls of the monitoring check command."
+       echo "       When attempts is 1 delay specifies the number of seconds until"
+       echo "       the actual backend gets terminated if it did not finish before."
+       echo "       One can set delay to 0 to run a quick monitoring check command"
+       echo "       that should finish within a tenth of a second (or it gets terminated)"
+       echo "       as often as possible and even both delay and attempts set to 0 works"
+       echo "       for special cases but the latter results unlimited busy looping."
+       echo "check: What is called to monitor the actual backend while it is running."
+       echo "       Either 'sleep' waits the number of seconds specified by delay"
+       echo "       or a whole percent encoded command (or script) can be specified."
+       echo "       The monitoring check command should finish within delay seconds"
+       echo "       otherwise it gets terminated (first via SIGTERM, later via SIGKILL)."
+       echo "actual_backend_URI: The whole verbatim device URI of the actual backend"
+       echo "                    e.g. as shown by 'lpstat -v' or 'lpinfo -v'."
+     } 1>&2
+     exit 1
+fi
+
+# Function to output PIDs of all descendant processes of a parent process PID (specified as $1)
+# i.e. the parent and its direct children plus recursively all subsequent children of children
+# (i.e. parent PID, children PIDs, grandchildren PIDs, great-grandchildren PIDs, and so on)
+# where each PID is output on a separated line.
+# Calling "ps --ppid $parent_pid -o pid=" recursively is needed
+# because otherwise it does not work on all systems.
+# E.g. on SLES10 and SLES11 it would work to simply call "ps -g $parent_pid -o pid="
+#   # sleep 20 | grep foo & ( sleep 30 | grep bar & ) ; sleep 1 ; ps f -g $$
+#   [1] 3622
+#     PID TTY      STAT   TIME COMMAND
+#    3372 pts/0    Ss     0:00 -bash
+#    3621 pts/0    S      0:00  \_ sleep 20
+#    3622 pts/0    S      0:00  \_ grep foo
+#    3627 pts/0    R+     0:00  \_ ps f -g 3372
+#    3625 pts/0    S      0:00 grep bar
+#    3624 pts/0    S      0:00 sleep 30
+# but this way it does no longer work e.g. on SLES12 or openSUSE Leap 42.3
+#   # sleep 20 | grep foo & ( sleep 30 | grep bar & ) ; sleep 1 ; ps f -g $$ ; ps --ppid $$ -o pid,args
+#   [1] 6518
+#     PID TTY      STAT   TIME COMMAND
+#     PID COMMAND
+#    6517 sleep 20
+#    6518 grep --color=auto foo
+#    6524 ps --ppid 2674 -o pid,args
+# where there is really no longer any output of the "ps f -g $$" command.
+# Because of the recursion the output of the deepest nested call appears first
+# so that it lists latest descendants PIDs first and the initial parent PID last
+# (i.e. great-grandchildren PIDs, grandchildren PIDs, children PIDs, parent PID):
+function DescendantsPids () { 
+    local parent_pid=$1
+    # Successfully ignore PIDs that do not exist or do no longer exist.
+    # Avoid the 'kill: (12345) - No such process' stderr message:
+    kill -0 $parent_pid 2>/dev/null || return 0
+    # Recursively call this function for the actual children:
+    local child_pid="" 
+    for child_pid in $( ps --ppid $parent_pid -o pid= ) ; do
+        # At least the sub-shell of the $( ps --ppid $parent_pid -o pid= )
+        # is always reported as a child_pid so that the following test avoids
+        # that DescendantsPids is uselessly recursively called for it:
+        kill -0 $child_pid 2>/dev/null && DescendantsPids $child_pid
+    done
+    # Only show PIDs that actually still exist which skips PIDs of children
+    # that were running a short time (like called programs by this function)
+    # and had already finished here:
+    kill -0 $parent_pid 2>/dev/null && echo $parent_pid || return 0
+}
+
+# Function to terminate all running descendant processes of a parent process PID (specified as $1).
+# First the parent process itself, then its children and grandchildren:
+function TerminateDescendants () {
+    local parent_pid=$1
+    local pid=""
+    local descendant_command=""
+    local not_yet_terminated_pids=""
+    local not_killable_pids=""
+    local pids_from_children_to_parent="$( DescendantsPids $parent_pid )"
+    # Reverse the ordering of the PIDs to get them from parent to children to grandchildren:
+    local pids_from_parent_to_children=""
+    for pid in $pids_from_children_to_parent ; do
+        pids_from_parent_to_children="$pid $pids_from_parent_to_children"
+    done
+    echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Terminating PID $parent_pid and descendant processes if so" 1>&2
+    # Send SIGTERM to all the processes.
+    for pid in $pids_from_parent_to_children ; do
+        # Test that a process is still running before SIGTERM is sent.
+        # Avoid the 'kill: (12345) - No such process' stderr message:
+        if kill -0 $pid 2>/dev/null ; then
+            if test $pid -ne $parent_pid ; then
+                descendant_command="$( ps -o command= $pid )"
+                echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Terminating descendant PID $pid $descendant_command" 1>&2
+            fi
+            kill -SIGTERM $pid 2>/dev/null
+            # Wait one second after the parent process got SIGTERM so that its descendant processes can terminate on their own:
+            test $pid -eq $parent_pid && sleep 1
+        fi
+    done
+    # When there is at least one descendant process wait one second to give the descendant processes some time to terminate:
+    test "$descendant_command" && sleep 1
+    # Determine which of the above processes that got SIGTERM did not yet terminate:
+    for pid in $pids_from_parent_to_children ; do
+        # Keep the ordering in not_yet_terminated_pids (i.e. parent then children then grandchildren):
+        kill -0 $pid 2>/dev/null && not_yet_terminated_pids="$not_yet_terminated_pids $pid"
+    done
+    # No need to kill processes if all were already terminated:
+    test "$not_yet_terminated_pids" || return 0
+    # Kill all not yet terminated processes:
+    for pid in $not_yet_terminated_pids ; do
+        if kill -0 $pid 2>/dev/null ; then
+            echo "WARNING: $MONITOR_SCHEME (PID $MONITOR_PID) PID $pid $( ps -o comm= $pid ) not yet terminated, killing it" 1>&2
+            kill -SIGKILL $pid 2>/dev/null
+        fi
+    done
+    # Wait one second to let the above processes that got SIGKILL actually terminate:
+    sleep 1
+    # Determine which of the above processes that got SIGKILL did not yet terminate:
+    for pid in $not_yet_terminated_pids ; do
+        kill -0 $pid 2>/dev/null && not_killable_pids="$not_killable_pids $pid"
+    done
+    # Success when all processes were terminated:
+    test "$not_killable_pids" || return 0
+    # Otherwise report the not killable PIDs:
+    for pid in $not_killable_pids ; do
+        kill -0 $pid 2>/dev/null && echo "ERROR: $MONITOR_SCHEME (PID $MONITOR_PID) PID $pid $( ps -o comm= $pid ) killed but it keeps running" 1>&2
+    done
+    return 1
+}
+
+# Function to terminate the monitoring check command if it is still running and report its exit code when finished:
+function TerminateMonitoringCheckCommand() {
+  kill -0 $MONITOR_CHECK_PID 2>/dev/null && TerminateDescendants $MONITOR_CHECK_PID
+  # Get the return code of the monitoring check command provided it is no longer running:
+  if kill -0 $MONITOR_CHECK_PID 2>/dev/null
+  then echo "ERROR: $MONITOR_SCHEME (PID $MONITOR_PID) Terminated check command PID $MONITOR_CHECK_PID but it is still running" 1>&2
+       return 1
+  else # In POSIX shells wait returns the exit code of the job even if it had already terminated when wait was started,
+       # see http://pubs.opengroup.org/onlinepubs/9699919799/utilities/wait.html that reads:
+       #  "This volume of POSIX.1-2017 requires the implementation to keep the status
+       #   of terminated jobs available until the status is requested ...":
+       wait $MONITOR_CHECK_PID
+       MONITOR_CHECK__EXIT_CODE=$?
+       echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Check command PID $MONITOR_CHECK_PID exited with exit code $MONITOR_CHECK__EXIT_CODE" 1>&2
+  fi
+  return 0
+}
+
+# Mark variables which are modified or created for export
+# (i.e. automatically export all set variables)
+# so that they are also available for the actual backend:
+set -a
+
+# Use a comprehensible variable name for own PID:
+MONITOR_PID=$$
+
+# Keep the original command line parameters (e.g. MONITOR_ARGV1 is the job-id)
+# in environment variables to make them available for later use:
+MONITOR_ARGV0="$0"
+MONITOR_ARGV1="$1"
+MONITOR_ARGV2="$2"
+MONITOR_ARGV3="$3"
+MONITOR_ARGV4="$4"
+MONITOR_ARGV5="$5"
+MONITOR_ARGV6="$6"
+
+# Have the input where the printing data comes in at fd0 (stdin) in any case:
+test "$MONITOR_ARGV6" && exec <"$MONITOR_ARGV6"
+
+# It seems the CUPS_BACKEND_* variables as listed in 'man 7 backend'
+# are not exported into the environment where a backend runs (at least not in CUPS 2.2.7)
+# so that we set them if not already set according to how they are defined in cups/backend.h
+test "$CUPS_BACKEND_OK" || CUPS_BACKEND_OK=0
+test "$CUPS_BACKEND_FAILED" || CUPS_BACKEND_FAILED=1
+test "$CUPS_BACKEND_AUTH_REQUIRED" || CUPS_BACKEND_AUTH_REQUIRED=2
+test "$CUPS_BACKEND_HOLD" || CUPS_BACKEND_HOLD=3
+test "$CUPS_BACKEND_STOP" || CUPS_BACKEND_STOP=4
+test "$CUPS_BACKEND_CANCEL" || CUPS_BACKEND_CANCEL=5
+test "$CUPS_BACKEND_RETRY" || CUPS_BACKEND_RETRY=6
+test "$CUPS_BACKEND_RETRY_CURRENT" || CUPS_BACKEND_RETRY_CURRENT=7
+
+# DEVICE_URI has the form monitor:/exit_code/attempts/delay/actual_backend_URI
+# Get the URI elements, i.e. scheme, exit_code, attempts, delay, and the actual_backend_URI.
+# Here it is crucial that those URI elements are separated by single slash (double slashes are possible only inside actual_backend_URI):
+IFS='/' read MONITOR_SCHEME MONITOR_EXIT_CODE MONITOR_MAX_ATTEMPTS MONITOR_DELAY MONITOR_CHECK ACTUAL_BACKEND_URI <<< "$DEVICE_URI"
+# Test that all parameters are specified and stop the queue if not because it is hopeless to try to print with a wrong device URI:
+if ! test "monitor:" = "$MONITOR_SCHEME" -a "$MONITOR_EXIT_CODE" -a "$MONITOR_MAX_ATTEMPTS" -a "$MONITOR_DELAY" -a "$MONITOR_CHECK" -a "$ACTUAL_BACKEND_URI"
+then echo "ERROR: $MONITOR_ARGV0 syntax error in device URI $DEVICE_URI" 1>&2
+     exit $CUPS_BACKEND_STOP
+fi
+
+# Convert MONITOR_EXIT_CODE specified as CUPS_BACKEND_* variable name into the matching number:
+case "$MONITOR_EXIT_CODE" in
+    (CUPS_BACKEND_OK) MONITOR_EXIT_CODE=$CUPS_BACKEND_OK ;;
+    (CUPS_BACKEND_FAILED) MONITOR_EXIT_CODE=$CUPS_BACKEND_FAILED ;;
+    (CUPS_BACKEND_AUTH_REQUIRED) MONITOR_EXIT_CODE=$CUPS_BACKEND_AUTH_REQUIRED ;;
+    (CUPS_BACKEND_HOLD) MONITOR_EXIT_CODE=$CUPS_BACKEND_HOLD ;;
+    (CUPS_BACKEND_STOP) MONITOR_EXIT_CODE=$CUPS_BACKEND_STOP ;;
+    (CUPS_BACKEND_CANCEL) MONITOR_EXIT_CODE=$CUPS_BACKEND_CANCEL ;;
+    (CUPS_BACKEND_RETRY) MONITOR_EXIT_CODE=$CUPS_BACKEND_RETRY ;;
+    (CUPS_BACKEND_RETRY_CURRENT) MONITOR_EXIT_CODE=$CUPS_BACKEND_RETRY_CURRENT ;;
+esac
+
+# Percent decode the monitoring check command:
+# Convert the percent-encoded MONITOR_CHECK string into a backslash-escape hexadecimal encoded string:
+MONITOR_CHECK_BACKSLSASH_ESCAPE_ENCODED="${MONITOR_CHECK//%/\\x}"
+# Print the backslash-escape encoded string while interpreting backslash escapes in there:
+MONITOR_CHECK="$( printf '%b' "$MONITOR_CHECK_BACKSLSASH_ESCAPE_ENCODED" )"
+
+# Get the default CUPS binary directory, where filters and backends are stored:
+CUPS_BIN_DIR=$( cups-config --serverbin ) || CUPS_BIN_DIR="/usr/lib/cups"
+
+# When attempts is 1 call the monitoring check command before the actual backend is started:
+if test $MONITOR_MAX_ATTEMPTS -eq 1
+then # Run the monitoring check command in the background (which runs in a subshell that makes it more save against unintended 'eval' side-effects):
+     eval $MONITOR_CHECK &
+     MONITOR_CHECK_PID=$!
+     echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Running check command PID $MONITOR_CHECK_PID $MONITOR_CHECK" 1>&2
+     # Run the actual backend one second after the monitoring check command was launched
+     # to give the monitoring check command a bit of time to completely start up:
+     sleep 1
+fi
+
+# Run the actual backend as a child process in the background within a separated subshell environment
+# to be able to set a specific different environment (DEVICE_URI and MONITOR_ARGV4) for the actual backend.
+# In POSIX shells stdin of background processes is by default assigned to /dev/null unless there is an explicit redirection
+# see http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18 that reads:
+#  "Asynchronous Lists
+#   If a command is terminated by the control operator <ampersand> ( '&' ),
+#   the shell shall execute the command asynchronously in a subshell.
+#   ...
+#   the standard input for an asynchronous list, before any explicit redirections are performed,
+#   shall be considered to be assigned to a file that has the same properties as /dev/null.
+#   ... In all cases, explicit redirection of standard input shall override this activity."
+# The background processes is run in a pipe to get that explicit redirection of its stdin
+# to the current monitor wrapper backend stdin where the printing data comes in.
+# The pipe has the additional advantage that an appropriate code structure is already there
+# where the default 'cat' can be replaced as needed by a printing data monitoring command
+# (e.g. by 'tee /tmp/monitor.stdin' to capture the printing data):
+cat | ( # Export the right DEVICE_URI for the actual backend inside the current subshell environment where the actual backend will be run:
+        export DEVICE_URI="$ACTUAL_BACKEND_URI"
+        # Get the actual backend file name i.e. the actual_backend_URI scheme (clip anything after the first ':' character):
+        ACTUAL_BACKEND_SCHEME=${DEVICE_URI%%:*}
+        # Backends should only produce multiple copies if a file name is supplied (see CUPS Software Programmers Manual):
+        test "$MONITOR_ARGV6" || export MONITOR_ARGV4="1"
+        # The actual backend call must happen in the last command in the subshell
+        # so that the return code of the subshell is the return code of the actual backend and
+        # because $! is the PID of the last process in the pipeline so that ACTUAL_BACKEND_PID gets set correctly.
+        # Replace the currently running bash subshell with the actual backend
+        # so that the actual backend gets signals to ACTUAL_BACKEND_PID directly
+        # (in particular SIGTERM from the monitor wrapper backend to terminate the actual backend).
+        # The actual backend call must not provide MONITOR_ARGV6 because the actual backend gets its input always at stdin (via the pipe):
+        exec -a "$DEVICE_URI" $CUPS_BIN_DIR/backend/$ACTUAL_BACKEND_SCHEME "$MONITOR_ARGV1" "$MONITOR_ARGV2" "$MONITOR_ARGV3" "$MONITOR_ARGV4" "$MONITOR_ARGV5"
+      ) &
+ACTUAL_BACKEND_PID=$!
+echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Started actual backend PID $ACTUAL_BACKEND_PID with device URI $ACTUAL_BACKEND_URI" 1>&2
+
+# Monitor the actual backend child process as long as it is running:
+declare -i MONITOR_ATTEMPTS_COUNTER="0"
+while kill -0 $ACTUAL_BACKEND_PID 2>/dev/null
+do # Count how often the while loop is run:
+   MONITOR_ATTEMPTS_COUNTER+=1
+   # First of all check if the actual backend needs to be terminated:
+   if test $MONITOR_MAX_ATTEMPTS -gt 0
+   then # Try to terminate the actual backend and leave the while loop in any case
+        # if the monitoring check command would be run more than MONITOR_MAX_ATTEMPTS:
+        if test $MONITOR_ATTEMPTS_COUNTER -gt $MONITOR_MAX_ATTEMPTS
+        then # Terminate the actual backend (it should be still running here because of the while loop condition - except for the small time lag):
+             echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Max attempts $MONITOR_MAX_ATTEMPTS reached, terminating actual backend PID $ACTUAL_BACKEND_PID" 1>&2
+             TerminateDescendants $ACTUAL_BACKEND_PID || echo "ERROR: $MONITOR_SCHEME (PID $MONITOR_PID) Actual backend PID $ACTUAL_BACKEND_PID is still running" 1>&2
+             # Leave the while loop in any case regardless if the actual backend actually terminated:
+             break
+        fi
+   fi
+   # Run the monitoring check command:
+   # When attempts is 1 the monitoring check command was already called before the actual backend was started above.
+   if test $MONITOR_MAX_ATTEMPTS -ne 1
+   then # Handle the special (simple) case when the monitoring check command is 'sleep' separatedly:
+        if test "sleep" = "$MONITOR_CHECK"
+        then echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Attempt $MONITOR_ATTEMPTS_COUNTER: Sleeping $MONITOR_DELAY seconds" 1>&2
+             sleep $MONITOR_DELAY
+             # In the 'sleep' case there is nothing more to be done so continue with the next run of the while loop:
+             continue
+        fi
+        # Run the monitoring check command in the background (which runs in a subshell that makes it more save against unintended 'eval' side-effects):
+        eval $MONITOR_CHECK &
+        MONITOR_CHECK_PID=$!
+        echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Attempt $MONITOR_ATTEMPTS_COUNTER: Running check command PID $MONITOR_CHECK_PID $MONITOR_CHECK" 1>&2
+        # When delay is set to 0 wait a tenth of a second so that a quick monitoring check command can normally finish:
+        test $MONITOR_DELAY -eq 0 && sleep 0.1
+   fi
+   # Wait at most delay seconds for the monitoring check command provided the actual backend is still running:
+   declare -i MONITOR_DELAY_COUNTER="0"
+   while test $MONITOR_DELAY_COUNTER -lt $MONITOR_DELAY
+   do kill -0 $ACTUAL_BACKEND_PID 2>/dev/null || break
+      kill -0 $MONITOR_CHECK_PID 2>/dev/null || break
+      MONITOR_DELAY_COUNTER+=1
+      echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Waiting for check command PID $MONITOR_CHECK_PID ($MONITOR_DELAY_COUNTER of $MONITOR_DELAY)" 1>&2
+      sleep 1
+   done
+   # Terminate the monitoring check command if it is still running and report its exit code when finished unless attempts is 1:
+   if test $MONITOR_MAX_ATTEMPTS -eq 1
+   then # Do not terminate the monitoring check command right now but after the while loop is left in the next run of it:
+        echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Terminating check command PID $MONITOR_CHECK_PID after the actual backend" 1>&2
+   else # Terminate the monitoring check command if it is still running and report its exit code when finished:
+        TerminateMonitoringCheckCommand
+   fi
+   # Wait the remaining number of seconds specified by delay provided the actual backend is still running:
+   while test $MONITOR_DELAY_COUNTER -lt $MONITOR_DELAY
+   do kill -0 $ACTUAL_BACKEND_PID 2>/dev/null || break
+      MONITOR_DELAY_COUNTER+=1
+      echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Waiting while actual backend PID $ACTUAL_BACKEND_PID is running ($MONITOR_DELAY_COUNTER of $MONITOR_DELAY)" 1>&2
+      sleep 1
+   done
+done
+
+# Get the return code of the actual backend provided it is no longer running:
+if kill -0 $ACTUAL_BACKEND_PID 2>/dev/null
+then echo echo "ERROR: $MONITOR_SCHEME (PID $MONITOR_PID) Actual backend PID $ACTUAL_BACKEND_PID is still running" 1>&2
+else wait $ACTUAL_BACKEND_PID
+     ACTUAL_BACKEND_EXIT_CODE=$?
+     if test $ACTUAL_BACKEND_EXIT_CODE -ne 0
+     then echo "ERROR: $MONITOR_SCHEME (PID $MONITOR_PID) Actual backend PID $ACTUAL_BACKEND_PID failed with exit code $ACTUAL_BACKEND_EXIT_CODE" 1>&2
+     else echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Actual backend PID $ACTUAL_BACKEND_PID finished with exit code $ACTUAL_BACKEND_EXIT_CODE" 1>&2
+     fi
+fi
+
+# When attempts is 1 terminate the monitoring check command one second after the actual backend finished or was terminated:
+if test $MONITOR_MAX_ATTEMPTS -eq 1
+then # Ensure the monitoring check command is terminated at least one second after the actual backend finished or was terminated:
+     sleep 1
+     # Terminate the monitoring check command if it is still running and report its exit code when finished:
+     TerminateMonitoringCheckCommand
+fi
+
+if test "inherit" = "$MONITOR_EXIT_CODE"
+then MONITOR_EXIT_CODE=$ACTUAL_BACKEND_EXIT_CODE
+     # Ensure MONITOR_EXIT_CODE cannot be zero when the actual backend was terminated.
+     # Usually when a program gets SIGTERM its exit code is 143 (SIGTERM = 15 and 128 + 15 = 143)
+     # but a backend could catch SIGTERM and cleanly exit with zero exit code:
+     if test $MONITOR_ATTEMPTS_COUNTER -gt $MONITOR_MAX_ATTEMPTS
+     then if test $MONITOR_EXIT_CODE -eq 0
+          then MONITOR_EXIT_CODE=$CUPS_BACKEND_FAILED
+               echo "ERROR: $MONITOR_SCHEME (PID $MONITOR_PID) Finished with exit code $MONITOR_EXIT_CODE (CUPS_BACKEND_FAILED) because the actual backend was terminated" 1>&2
+          else echo "ERROR: $MONITOR_SCHEME (PID $MONITOR_PID) Finished with inherited exit code $MONITOR_EXIT_CODE from the terminated actual backend" 1>&2
+          fi
+     else if test $MONITOR_EXIT_CODE -ne 0
+          then echo "ERROR: $MONITOR_SCHEME (PID $MONITOR_PID) Finished with inherited exit code $MONITOR_EXIT_CODE from the actual backend" 1>&2
+          else echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Finished with inherited exit code $MONITOR_EXIT_CODE from the actual backend" 1>&2
+          fi
+     fi
+else if test $MONITOR_EXIT_CODE -ne 0
+     then echo "ERROR: $MONITOR_SCHEME (PID $MONITOR_PID) Finished with specified exit code $MONITOR_EXIT_CODE" 1>&2
+     else echo "NOTICE: $MONITOR_SCHEME (PID $MONITOR_PID) Finished with specified exit code $MONITOR_EXIT_CODE" 1>&2
+     fi
+fi
+
+exit $MONITOR_EXIT_CODE
+
