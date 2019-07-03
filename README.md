@@ -107,13 +107,15 @@ e.g. as shown by `lpstat -v` or `lpinfo -v`.
 
 Usage example:
 
-Run 'tcpdump' in parallel with the CUPS 'socket' backend.
-Assume the actual_backend_URI of the current print queue is
+Run 'tcpdump' in parallel with the CUPS 'socket' backend to monitor
+what happens on the network while the socket backend is running.
+
+Assume the actual backend URI of the current print queue is
 ```
 socket://192.168.101.202:9100
 ```
 
-The following 'tcpdump' command could be used to monitor what happens
+The following tcpdump command could be used to monitor what happens
 when that backend sends the print data to port 9100 at host 192.168.101.202
 and store the tcpdump output in /tmp/monitor.pcap
 ```
@@ -134,14 +136,26 @@ as the check parameter of the monitor backend device URI
 so that the current socket backend can be wrapped with the monitor backend
 for example with a command like
 ```
-lpadmin -p mtest -v 'monitor:/CUPS_BACKEND_CANCEL/1/9/tcpdump%20-w%20%2Ftmp%2Fmonitor.pcap%20host%20192.168.101.202%20and%20port%209100/socket://192.168.101.202:9100' -E
+lpadmin -p queue_name -v 'monitor:/CUPS_BACKEND_CANCEL/1/9/tcpdump%20-w%20%2Ftmp%2Fmonitor.pcap%20host%20192.168.101.202%20and%20port%209100/socket://192.168.101.202:9100' -E
 ```
-that starts the tcpdump command one second before the socket backend is run
-and waits up to 9 seconds for the socket backend to finish (otherwise the
-socket backend gets terminated) and one second after the socked backend exited
-the tcpdump command gets also terminated and the return code of the monitor
-backend is always CUPS_BACKEND_CANCEL so thats the print job would be
-always cancelled if an error happened.
+
+This lets the monitor backend start the tcpdump command one second
+before the socket backend is run and then wait up to 9 seconds
+for the socket backend to finish (or the socket backend gets terminated).
+One second after the socked backend exited the tcpdump command gets terminated.
+The return code of the monitor backend is always CUPS_BACKEND_CANCEL where
+print jobs get cancelled in case of an error which avoids that the queue
+becomes disabled so that one can "just proceed" when doing various tests.
+
+By default CUPS backends are run by the cupsd as user 'lp' but
+usually 'lp' is not allowed to dump arbitrary network traffic
+so that the monitor backend would have to be run as 'root'.
+The cupsd runs backends as 'root' when nobody except
+the owner has permissions so a command like
+```
+chmod 0700 /usr/lib/cups/backend/monitor
+```
+could be needed to run the monitor backend as 'root'.
 
 ## Background information
 
