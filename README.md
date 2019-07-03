@@ -140,8 +140,8 @@ lpadmin -p queue_name -v 'monitor:/CUPS_BACKEND_CANCEL/1/9/tcpdump%20-w%20%2Ftmp
 ```
 
 This lets the monitor backend start the tcpdump command one second
-before the socket backend is run and then wait up to 9 seconds
-for the socket backend to finish (or the socket backend gets terminated).
+before the socket backend is run and then wait up to 9 seconds for the
+socket backend to finish (afterwards the socket backend gets terminated).
 One second after the socked backend exited the tcpdump command gets terminated.
 The return code of the monitor backend is always CUPS_BACKEND_CANCEL where
 print jobs get cancelled in case of an error which avoids that the queue
