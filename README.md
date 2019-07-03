@@ -14,7 +14,7 @@ pipe job-id user title copies options [file]
 
 Queue setup synopsis:
 ```
-lpadmin -p queue_name -v "pipe:/path/to/command?option1=value1&-option2&value2" -E
+lpadmin -p queue_name -v 'pipe:/path/to/command?option1=value1&-option2&value2' -E
 ```
 
 The command is called with the specified options as:
