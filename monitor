@@ -376,7 +376,7 @@ done
 
 # Get the return code of the actual backend provided it is no longer running:
 if kill -0 $ACTUAL_BACKEND_PID 2>/dev/null
-then echo echo "ERROR: $MONITOR_SCHEME (PID $MONITOR_PID) Actual backend PID $ACTUAL_BACKEND_PID is still running" 1>&2
+then echo "ERROR: $MONITOR_SCHEME (PID $MONITOR_PID) Actual backend PID $ACTUAL_BACKEND_PID is still running" 1>&2
 else wait $ACTUAL_BACKEND_PID
      ACTUAL_BACKEND_EXIT_CODE=$?
      if test $ACTUAL_BACKEND_EXIT_CODE -ne 0
