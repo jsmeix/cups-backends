@@ -1,6 +1,11 @@
 # Make yourself understood
 
-Make yourself understood to enable others to fix and enhance your code contributions properly as needed.
+Things are written in Bash, a language that can be used in various styles.
+The intent is to make it easier for everybody to understand the code
+and subsequently to contribute fixes and enhancements.
+
+So make yourself understood to enable others to fix and enhance
+your code contributions properly as needed.
 
 From this overall idea the following coding hints are derived.
 
