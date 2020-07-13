@@ -162,7 +162,7 @@ function TerminateDescendants () {
     # Determine which of the above processes that got SIGTERM did not yet terminate:
     for pid in $pids_from_parent_to_children ; do
         # Keep the ordering in not_yet_terminated_pids (i.e. parent then children then grandchildren):
-        kill -0 $pid 2>/dev/null && not_yet_terminated_pids="$not_yet_terminated_pids $pid"
+        kill -0 $pid 2>/dev/null && not_yet_terminated_pids+=" $pid"
     done
     # No need to kill processes if all were already terminated:
     test "$not_yet_terminated_pids" || return 0
@@ -177,7 +177,7 @@ function TerminateDescendants () {
     sleep 1
     # Determine which of the above processes that got SIGKILL did not yet terminate:
     for pid in $not_yet_terminated_pids ; do
-        kill -0 $pid 2>/dev/null && not_killable_pids="$not_killable_pids $pid"
+        kill -0 $pid 2>/dev/null && not_killable_pids+=" $pid"
     done
     # Success when all processes were terminated:
     test "$not_killable_pids" || return 0
