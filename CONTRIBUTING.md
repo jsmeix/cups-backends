@@ -117,7 +117,7 @@ done
 </pre>
 which lets `grep` intentionally fail for empty or blank elements in the FILES array
 to skip such elements (with the `grep` error message as information)
-and proceed with the next element of the in the FILES array
+and proceed with the next element in the FILES array
 cf. the section "Beware of the emptiness" below.
 
 ## Maintain backward compatibility
