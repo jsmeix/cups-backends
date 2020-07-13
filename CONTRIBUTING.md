@@ -105,7 +105,7 @@ Preferably during development of new scripts or when scripts are much overhauled
 and while testing new code use `set -ue` to die from unset variables and unhandled errors
 and use `set -o pipefail` to better notice failures in a pipeline.
 
-Using `set -eu -o pipefail` also during runtime is currently not recommended
+Using `set -eu -o pipefail` also during runtime is not recommended
 because it is a double-edged sword which can cause more problems in practice
 than it intends to solve in theory.
 I.e. problems for users when things fail for them only because of `set -eu -o pipefail`
@@ -115,7 +115,9 @@ for file in "${FILES[@]}" ; do
     grep SOMETHING "$file" >>something.found
 done
 </pre>
-where `grep` intentionally fails when the FILES array contains an empty or blank element
+which lets `grep` intentionally fail for empty or blank elements in the FILES array
+to skip such elements (with the `grep` error message as information)
+and proceed with the next element of the in the FILES array
 cf. the section "Beware of the emptiness" below.
 
 ## Maintain backward compatibility
