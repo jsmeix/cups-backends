@@ -171,6 +171,9 @@ In particular do not use UTF-8 encoded multi-byte characters.
 
 * Append to array via `ARRAY+=( appended elements )`<br>
   but prepend via `ARRAY=( prepended elements "${ARRAY[@]}" )`
+  
+* Variables that are used only insinde a function should be lowercased<br>
+  and must be marked `local` like `local var="default_value"`
 
 ### test, [, [[, ((
 
