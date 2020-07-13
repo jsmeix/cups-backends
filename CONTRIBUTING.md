@@ -170,7 +170,7 @@ In particular do not use UTF-8 encoded multi-byte characters.
   but prepend via `STRING="prepended words $STRING"`
 
 * Append to array via `ARRAY+=( appended elements )`
-  but prepend via `ARRAY=( prepend elements "${ARRAY[@]}" )`
+  but prepend via `ARRAY=( prepended elements "${ARRAY[@]}" )`
 
 ### test, [, [[, ((
 
