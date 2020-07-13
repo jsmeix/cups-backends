@@ -1,7 +1,8 @@
 # Make yourself understood
 
 Things are written in Bash, a language that can be used in various styles.
-The intent is to make it easier for everybody to understand the code
+
+The primary intent is to make it easier for everybody to understand the code
 and subsequently to contribute fixes and enhancements.
 
 So make yourself understood to enable others to fix and enhance
