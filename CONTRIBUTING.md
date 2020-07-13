@@ -166,10 +166,10 @@ In particular do not use UTF-8 encoded multi-byte characters.
 
 * Curly braces only if really needed: `$VAR` instead of `${VAR}`
 
-* Append to string via `STRING+=" appended words"`
+* Append to string via `STRING+=" appended words"`<br>
   but prepend via `STRING="prepended words $STRING"`
 
-* Append to array via `ARRAY+=( appended elements )`
+* Append to array via `ARRAY+=( appended elements )`<br>
   but prepend via `ARRAY=( prepended elements "${ARRAY[@]}" )`
 
 ### test, [, [[, ((
