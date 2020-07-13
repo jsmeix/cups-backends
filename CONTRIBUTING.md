@@ -123,6 +123,14 @@ cf. the section "Beware of the emptiness" below.
 Implement adaptions and enhancements in a backward compatible way
 so that your changes do not cause regressions for others.
 
+* One same code must work on various different systems.
+  On older systems as well as on newest systems and on various different Linux distributions.
+
+* Preferably use simple generic functionality that works on any Linux system.
+  Better very simple code than oversophisticated (possibly fragile) constructs.
+  In particular avoid special bash version 4 features.
+  The code should also work with bash version 3.
+
 ## Character encoding
 
 Use only traditional (7-bit) ASCII charactes.
@@ -151,6 +159,8 @@ In particular do not use UTF-8 encoded multi-byte characters.
 ## Text layout
 
 * Indentation with blanks, no tabs.
+
+* No backticks for command substitution, only `$( COMMAND )`
 
 * Curly braces only if really needed: `$VAR` instead of `${VAR}`
 
