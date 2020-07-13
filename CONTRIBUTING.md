@@ -166,10 +166,16 @@ In particular do not use UTF-8 encoded multi-byte characters.
 
 * Curly braces only if really needed: `$VAR` instead of `${VAR}`
 
+* Append to string via `STRING+=" appended words"`
+  but prepend via `STRING="prepended words $STRING"`
+
+* Append to array via `ARRAY+=( appended elements )`
+  but prepend via `ARRAY=( prepend elements "${ARRAY[@]}" )`
+
 ### test, [, [[, ((
 
-* Use `[[` where it is required (e.g. for pattern matching or complex conditionals)
-  and `[` or `test` everywhere else.
+* Use `[[` when it is required (e.g. for pattern matching or complex conditionals)
+  but use `[` or plain and simple `test` everywhere else.
 
 * `((` is the preferred way for numeric comparison,
   variables don't need to be prefixed with `$` there.
