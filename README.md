@@ -105,7 +105,7 @@ otherwise it gets terminated (first via SIGTERM, later via SIGKILL).
 The whole verbatim device URI of the actual backend
 e.g. as shown by `lpstat -v` or `lpinfo -v`.
 
-Usage example:
+### Usage example:
 
 Run 'tcpdump' in parallel with the CUPS socket backend to monitor
 what happens on the network while the socket backend is running.
