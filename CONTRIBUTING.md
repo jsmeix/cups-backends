@@ -17,6 +17,13 @@ for i in `seq 1 2 $((2*$1-1))`;do echo $((j+=i));done
 ```
 Try to find out what that code is about - it does a useful thing.
 
+The following collection of coding hints should help to get understandable code.
+
+Don't be afraid to contribute even if your contribution does not match all the coding hints.
+Nevertheless try to understand the idea behind this coding hints
+so that you know how to break them properly when needed
+(i.e. "learn the rules so you know how to break them properly").
+
 ## Code must be easy to read
 
 * Variables and functions must have names that explain what they do, even if it makes them longer.
@@ -101,14 +108,14 @@ cure only a particular symptom but not the root cause.
 * At least test mandatory conditions before proceeding.
   If a mandatory condition is not fulfilled abort with a meaningful error message.
 
-Preferably during development of new scripts or when scripts are much overhauled
-and while testing new code use `set -ue` to die from unset variables and unhandled errors
+Preferably during development of new scripts or when scripts are much overhauled and
+while testing new code use `set -ue` to die from unset variables and unhandled errors
 and use `set -o pipefail` to better notice failures in a pipeline.
 
 Using `set -eu -o pipefail` also during runtime is not recommended
 because it is a double-edged sword which can cause more problems in practice
-than it intends to solve in theory.
-I.e. problems for users when things fail for them only because of `set -eu -o pipefail`
+than it intends to solve in theory:
+Mainly problems for users when things fail for them only because of `set -eu -o pipefail`
 while actually the code would work fail-safe without `set -eu -o pipefail` like
 <pre>
 for file in "${FILES[@]}" ; do
@@ -132,6 +139,8 @@ so that your changes do not cause regressions for others.
   Better very simple code than oversophisticated (possibly fragile) constructs.
   In particular avoid special bash version 4 features.
   The code should also work with bash version 3.
+  If associative arrays are required you must test if bash supports it and abort if not like <pre>
+  declare -A arr=() || { echo "Error: Associative arrays not supported" 1>&2 ; exit 1 ; } </pre>
 
 ## Character encoding
 
