@@ -61,9 +61,9 @@ also by others who did not originally make them.
   (even if all is totally obvious for you, others who do not know about your particular use case
   or do not have your particular environment may understand nothing at all about your code).
   
-* If there is a GitHub issue or another URL available for a particular piece of code
-  provide a comment with the GitHub issue or any other URL that tells about the reasoning
-  behind current implementation details.
+* If there is a public GitHub issue or another publc accessible and stable URL available
+  for a particular piece of code provide a comment with the GitHub issue or any other URL
+  that tells about the reasoning behind current implementation details.
 
 Here the initial example so that one can understand what it is about:
 <pre>
