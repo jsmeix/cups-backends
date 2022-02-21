@@ -22,8 +22,9 @@ The command is called with the specified options as:
 /path/to/command option1=value1 -option2 value2
 ```
 
-The original command line parameters (... job-id user ...)
-are provided as environment variables PIPE_BACKEND_ARGV[0-6]
+The original command line parameters (pipe job-id user ...)
+are provided as environment variables
+PIPE_BACKEND_ARGV0 PIPE_BACKEND_ARGV1 PIPE_BACKEND_ARGV2 ...
 
 ## /usr/lib/cups/backend/monitor
 
